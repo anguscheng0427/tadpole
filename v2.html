@@ -58,6 +58,10 @@
             border-radius: 5px;
             object-fit: contain;
         }
+        
+        #processedCanvas, #binaryCanvas {
+            object-fit: none;
+        }
         .controls {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -299,16 +303,38 @@
         }
 
         function setupCanvases(img) {
-            // 設置主畫布
+            // 計算適合的顯示尺寸（保持比例）
+            const maxDisplayWidth = 400;
+            const maxDisplayHeight = 300;
+            
+            const aspectRatio = img.width / img.height;
+            let displayWidth, displayHeight;
+            
+            if (aspectRatio > maxDisplayWidth / maxDisplayHeight) {
+                displayWidth = maxDisplayWidth;
+                displayHeight = maxDisplayWidth / aspectRatio;
+            } else {
+                displayHeight = maxDisplayHeight;
+                displayWidth = maxDisplayHeight * aspectRatio;
+            }
+            
+            // 設置主畫布 - 內部尺寸為原始圖片尺寸
             canvas.width = img.width;
             canvas.height = img.height;
+            // 設置顯示尺寸
+            canvas.style.width = displayWidth + 'px';
+            canvas.style.height = displayHeight + 'px';
+            
             ctx.drawImage(img, 0, 0);
             originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             canvas.style.display = 'block';
             
-            // 設置二值化畫布
+            // 設置二值化畫布 - 內部尺寸為原始圖片尺寸
             binaryCanvas.width = img.width;
             binaryCanvas.height = img.height;
+            // 設置顯示尺寸
+            binaryCanvas.style.width = displayWidth + 'px';
+            binaryCanvas.style.height = displayHeight + 'px';
             binaryCanvas.style.display = 'block';
         }
 
