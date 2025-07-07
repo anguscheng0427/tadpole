@@ -51,11 +51,12 @@
             margin: 10px 0;
             color: #34495e;
         }
-        img, canvas {
+        #originalImage, #processedCanvas, #binaryCanvas {
+            max-width: 400px;
+            max-height: 300px;
             border: 2px solid #34495e;
             border-radius: 5px;
-            max-width: 100%;
-            height: auto;
+            object-fit: contain;
         }
         .controls {
             display: grid;
@@ -148,7 +149,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🐸 進階蝌蚪識別計數器 v2.0</h1>
+        <h1>🐸 進階蝌蚪識別計數器 v3.0</h1>
         
         <div class="method-info">
             <h3>🔬 新的檢測方法：</h3>
@@ -255,6 +256,7 @@
         let detectedTadpoles = [];
         let manualMarks = [];
         let isManualMode = false;
+        let displayScale = 1; // 新增：記錄顯示縮放比例
 
         document.addEventListener('DOMContentLoaded', function() {
             canvas = document.getElementById('processedCanvas');
@@ -298,25 +300,427 @@
         }
 
         function setupCanvases(img) {
-            // 修正 Canvas 尺寸問題
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            canvas.style.width = img.naturalWidth + 'px';
-            canvas.style.height = img.naturalHeight + 'px';
-
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            // 計算合適的顯示尺寸，保持寬高比
+            const maxWidth = 400;
+            const maxHeight = 300;
+            
+            let displayWidth = img.width;
+            let displayHeight = img.height;
+            
+            // 計算縮放比例
+            const widthRatio = maxWidth / img.width;
+            const heightRatio = maxHeight / img.height;
+            const scale = Math.min(widthRatio, heightRatio, 1); // 不要放大，只縮小
+            
+            displayWidth = Math.round(img.width * scale);
+            displayHeight = Math.round(img.height * scale);
+            
+            displayScale = scale; // 記錄縮放比例
+            
+            // 設置畫布的實際尺寸為顯示尺寸
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
+            binaryCanvas.width = displayWidth;
+            binaryCanvas.height = displayHeight;
+            
+            // 清除CSS尺寸設定，讓畫布按實際尺寸顯示
+            canvas.style.width = displayWidth + 'px';
+            canvas.style.height = displayHeight + 'px';
+            canvas.style.maxWidth = 'none';
+            canvas.style.maxHeight = 'none';
+            
+            binaryCanvas.style.width = displayWidth + 'px';
+            binaryCanvas.style.height = displayHeight + 'px';
+            binaryCanvas.style.maxWidth = 'none';
+            binaryCanvas.style.maxHeight = 'none';
+            
+            // 在畫布上繪製縮放後的圖像
+            ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
             originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
             canvas.style.display = 'block';
-
-            binaryCanvas.width = img.naturalWidth;
-            binaryCanvas.height = img.naturalHeight;
-            binaryCanvas.style.width = img.naturalWidth + 'px';
-            binaryCanvas.style.height = img.naturalHeight + 'px';
             binaryCanvas.style.display = 'block';
         }
 
-        // 其他函式都原樣保留
-        // ...
+        function detectTadpoles() {
+            if (!originalImageData) {
+                alert('請先上傳圖片！');
+                return;
+            }
+
+            const threshold = parseInt(document.getElementById('binaryThreshold').value);
+            const minArea = parseInt(document.getElementById('minArea').value);
+            const maxArea = parseInt(document.getElementById('maxArea').value);
+            const morphSize = parseInt(document.getElementById('morphSize').value);
+            const aspectRatio = parseFloat(document.getElementById('aspectRatio').value);
+            const solidityThreshold = parseFloat(document.getElementById('solidityThreshold').value);
+
+            // 1. 轉換為灰階
+            const grayData = convertToGrayscale(originalImageData);
+            
+            // 2. 自適應二值化
+            const binaryData = adaptiveThreshold(grayData, threshold);
+            
+            // 3. 形態學處理
+            const morphData = morphologyOperations(binaryData, morphSize);
+            
+            // 4. 顯示二值化結果
+            displayBinaryImage(morphData);
+            
+            // 5. 輪廓檢測和分析
+            const contours = findContours(morphData);
+            
+            // 6. 篩選有效輪廓
+            const validContours = filterContours(contours, minArea, maxArea, aspectRatio, solidityThreshold);
+            
+            // 7. 繪製結果
+            drawDetectionResults(validContours);
+            
+            // 8. 更新統計信息
+            updateStatistics(contours, validContours);
+            
+            detectedTadpoles = validContours;
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function convertToGrayscale(imageData) {
+            const data = new Uint8ClampedArray(imageData.data);
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                data[i] = gray;
+                data[i + 1] = gray;
+                data[i + 2] = gray;
+            }
+            return new ImageData(data, imageData.width, imageData.height);
+        }
+
+        function adaptiveThreshold(imageData, threshold) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const result = new Uint8ClampedArray(data.length);
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = data[i];
+                const binary = gray < threshold ? 0 : 255;
+                result[i] = binary;
+                result[i + 1] = binary;
+                result[i + 2] = binary;
+                result[i + 3] = 255;
+            }
+            
+            return new ImageData(result, width, height);
+        }
+
+        function morphologyOperations(imageData, kernelSize) {
+            // 執行開運算（腐蝕後膨脹）去除噪聲
+            let result = erode(imageData, kernelSize);
+            result = dilate(result, kernelSize);
+            
+            // 執行閉運算（膨脹後腐蝕）填補空洞
+            result = dilate(result, kernelSize);
+            result = erode(result, kernelSize);
+            
+            return result;
+        }
+
+        function erode(imageData, kernelSize) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const result = new Uint8ClampedArray(data.length);
+            
+            for (let y = kernelSize; y < height - kernelSize; y++) {
+                for (let x = kernelSize; x < width - kernelSize; x++) {
+                    let minVal = 255;
+                    
+                    for (let dy = -kernelSize; dy <= kernelSize; dy++) {
+                        for (let dx = -kernelSize; dx <= kernelSize; dx++) {
+                            const idx = ((y + dy) * width + (x + dx)) * 4;
+                            minVal = Math.min(minVal, data[idx]);
+                        }
+                    }
+                    
+                    const idx = (y * width + x) * 4;
+                    result[idx] = minVal;
+                    result[idx + 1] = minVal;
+                    result[idx + 2] = minVal;
+                    result[idx + 3] = 255;
+                }
+            }
+            
+            return new ImageData(result, width, height);
+        }
+
+        function dilate(imageData, kernelSize) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const result = new Uint8ClampedArray(data.length);
+            
+            for (let y = kernelSize; y < height - kernelSize; y++) {
+                for (let x = kernelSize; x < width - kernelSize; x++) {
+                    let maxVal = 0;
+                    
+                    for (let dy = -kernelSize; dy <= kernelSize; dy++) {
+                        for (let dx = -kernelSize; dx <= kernelSize; dx++) {
+                            const idx = ((y + dy) * width + (x + dx)) * 4;
+                            maxVal = Math.max(maxVal, data[idx]);
+                        }
+                    }
+                    
+                    const idx = (y * width + x) * 4;
+                    result[idx] = maxVal;
+                    result[idx + 1] = maxVal;
+                    result[idx + 2] = maxVal;
+                    result[idx + 3] = 255;
+                }
+            }
+            
+            return new ImageData(result, width, height);
+        }
+
+        function findContours(imageData) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const visited = new Array(width * height).fill(false);
+            const contours = [];
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = y * width + x;
+                    if (!visited[idx] && data[idx * 4] === 255) {
+                        const contour = traceContour(data, width, height, x, y, visited);
+                        if (contour.length > 5) {
+                            contours.push(contour);
+                        }
+                    }
+                }
+            }
+            
+            return contours;
+        }
+
+        function traceContour(data, width, height, startX, startY, visited) {
+            const contour = [];
+            const stack = [{x: startX, y: startY}];
+            
+            while (stack.length > 0) {
+                const {x, y} = stack.pop();
+                const idx = y * width + x;
+                
+                if (x < 0 || x >= width || y < 0 || y >= height || visited[idx] || data[idx * 4] !== 255) {
+                    continue;
+                }
+                
+                visited[idx] = true;
+                contour.push({x, y});
+                
+                // 檢查8個方向的鄰居
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        stack.push({x: x + dx, y: y + dy});
+                    }
+                }
+            }
+            
+            return contour;
+        }
+
+        function filterContours(contours, minArea, maxArea, maxAspectRatio, minSolidity) {
+            const validContours = [];
+            
+            contours.forEach(contour => {
+                const area = contour.length;
+                
+                if (area < minArea || area > maxArea) return;
+                
+                const boundingRect = getBoundingRect(contour);
+                const aspectRatio = Math.max(boundingRect.width, boundingRect.height) / 
+                                 Math.min(boundingRect.width, boundingRect.height);
+                
+                if (aspectRatio > maxAspectRatio) return;
+                
+                const convexHull = getConvexHull(contour);
+                const solidity = area / convexHull.length;
+                
+                if (solidity < minSolidity) return;
+                
+                validContours.push({
+                    contour,
+                    area,
+                    boundingRect,
+                    aspectRatio,
+                    solidity,
+                    center: {
+                        x: boundingRect.x + boundingRect.width / 2,
+                        y: boundingRect.y + boundingRect.height / 2
+                    }
+                });
+            });
+            
+            return validContours;
+        }
+
+        function getBoundingRect(contour) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            contour.forEach(point => {
+                minX = Math.min(minX, point.x);
+                minY = Math.min(minY, point.y);
+                maxX = Math.max(maxX, point.x);
+                maxY = Math.max(maxY, point.y);
+            });
+            
+            return {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            };
+        }
+
+        function getConvexHull(contour) {
+            // 簡化的凸包算法
+            contour.sort((a, b) => a.x - b.x || a.y - b.y);
+            
+            const lower = [];
+            for (let i = 0; i < contour.length; i++) {
+                while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], contour[i]) <= 0) {
+                    lower.pop();
+                }
+                lower.push(contour[i]);
+            }
+            
+            const upper = [];
+            for (let i = contour.length - 1; i >= 0; i--) {
+                while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], contour[i]) <= 0) {
+                    upper.pop();
+                }
+                upper.push(contour[i]);
+            }
+            
+            upper.pop();
+            lower.pop();
+            return lower.concat(upper);
+        }
+
+        function cross(O, A, B) {
+            return (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+        }
+
+        function displayBinaryImage(imageData) {
+            binaryCtx.putImageData(imageData, 0, 0);
+        }
+
+        function drawDetectionResults(validContours) {
+            ctx.putImageData(originalImageData, 0, 0);
+            
+            // 繪製自動檢測結果
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'red';
+            
+            validContours.forEach(item => {
+                const {center, boundingRect} = item;
+                const radius = Math.max(boundingRect.width, boundingRect.height) / 2;
+                
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            // 繪製手動標記
+            ctx.strokeStyle = 'blue';
+            ctx.fillStyle = 'blue';
+            
+            manualMarks.forEach(mark => {
+                ctx.beginPath();
+                ctx.arc(mark.x, mark.y, 8, 0, 2 * Math.PI);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(mark.x, mark.y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+
+        function updateStatistics(allContours, validContours) {
+            document.getElementById('tadpoleCount').textContent = validContours.length;
+            document.getElementById('totalContours').textContent = allContours.length;
+            document.getElementById('validContours').textContent = validContours.length;
+            
+            if (validContours.length > 0) {
+                const avgArea = validContours.reduce((sum, item) => sum + item.area, 0) / validContours.length;
+                document.getElementById('avgArea').textContent = Math.round(avgArea);
+            } else {
+                document.getElementById('avgArea').textContent = '0';
+            }
+            
+            document.getElementById('manualCount').textContent = manualMarks.length;
+        }
+
+        function showBinaryImage() {
+            if (originalImageData) {
+                const threshold = parseInt(document.getElementById('binaryThreshold').value);
+                const grayData = convertToGrayscale(originalImageData);
+                const binaryData = adaptiveThreshold(grayData, threshold);
+                const morphSize = parseInt(document.getElementById('morphSize').value);
+                const morphData = morphologyOperations(binaryData, morphSize);
+                displayBinaryImage(morphData);
+            }
+        }
+
+        function resetImage() {
+            if (originalImageData) {
+                ctx.putImageData(originalImageData, 0, 0);
+                binaryCtx.clearRect(0, 0, binaryCanvas.width, binaryCanvas.height);
+                document.getElementById('results').style.display = 'none';
+                detectedTadpoles = [];
+                manualMarks = [];
+                isManualMode = false;
+            }
+        }
+
+        function manualCount() {
+            if (!originalImageData) {
+                alert('請先上傳圖片！');
+                return;
+            }
+            
+            isManualMode = !isManualMode;
+            
+            if (isManualMode) {
+                canvas.style.cursor = 'crosshair';
+                canvas.addEventListener('click', handleManualClick);
+                alert('手動計數模式已開啟！點擊圖像來標記蝌蚪。');
+            } else {
+                canvas.style.cursor = 'default';
+                canvas.removeEventListener('click', handleManualClick);
+                alert('手動計數模式已關閉。');
+            }
+        }
+
+        function handleManualClick(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            manualMarks.push({x, y});
+            drawDetectionResults(detectedTadpoles);
+            document.getElementById('manualCount').textContent = manualMarks.length;
+            
+            if (document.getElementById('results').style.display === 'none') {
+                document.getElementById('results').style.display = 'block';
+                updateStatistics([], detectedTadpoles);
+            }
+        }
     </script>
 </body>
 </html>
