@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>進階蝌蚪識別計數器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #ecf0f1;
+        }
+        .upload-area:hover {
+            background-color: #d5dbdb;
+        }
+        #fileInput {
+            margin: 10px 0;
+        }
+        .image-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        .image-box {
+            text-align: center;
+            margin: 10px;
+        }
+        .image-box h3 {
+            margin: 10px 0;
+            color: #34495e;
+        }
+        #originalImage, #processedCanvas, #binaryCanvas {
+            max-width: 400px;
+            max-height: 300px;
+            border: 2px solid #34495e;
+            border-radius: 5px;
+            object-fit: contain;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        .value-display {
+            color: #3498db;
+            font-weight: bold;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .button-group {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .results {
+            background-color: #e8f5e8;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .count-display {
+            font-size: 32px;
+            font-weight: bold;
+            color: #27ae60;
+            margin: 15px 0;
+        }
+        .instructions {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        .method-info {
+            background-color: #d4edda;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #28a745;
+        }
+        .detection-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .info-item {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .info-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #3498db;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐸 進階蝌蚪識別計數器 v2.0</h1>
+        
+        <div class="method-info">
+            <h3>🔬 新的檢測方法：</h3>
+            <p><strong>形態學處理 + 輪廓分析</strong> - 專為小型水生動物設計的識別算法</p>
+            <p>• 自適應二值化處理 • 形態學開閉運算 • 智能輪廓篩選 • 重疊物體分離</p>
+        </div>
+
+        <div class="instructions">
+            <h3>📋 使用說明：</h3>
+            <p>1. 上傳蝌蚪圖片 → 2. 調整檢測參數 → 3. 點擊「智能識別」→ 4. 查看結果並手動調整</p>
+        </div>
+
+        <div class="upload-area">
+            <h3>選擇圖片</h3>
+            <input type="file" id="fileInput" accept="image/*">
+            <p>支援 JPG, PNG, GIF 格式，建議解析度 800x600 以上</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="binaryThreshold">二值化閾值: <span class="value-display" id="binaryThresholdValue">120</span></label>
+                <input type="range" id="binaryThreshold" min="80" max="200" value="120">
+            </div>
+            <div class="control-group">
+                <label for="minArea">最小面積: <span class="value-display" id="minAreaValue">15</span></label>
+                <input type="range" id="minArea" min="5" max="50" value="15">
+            </div>
+            <div class="control-group">
+                <label for="maxArea">最大面積: <span class="value-display" id="maxAreaValue">200</span></label>
+                <input type="range" id="maxArea" min="100" max="500" value="200">
+            </div>
+            <div class="control-group">
+                <label for="morphSize">形態學核大小: <span class="value-display" id="morphSizeValue">2</span></label>
+                <input type="range" id="morphSize" min="1" max="5" value="2">
+            </div>
+            <div class="control-group">
+                <label for="aspectRatio">長寬比容忍度: <span class="value-display" id="aspectRatioValue">3.0</span></label>
+                <input type="range" id="aspectRatio" min="1.5" max="5.0" step="0.1" value="3.0">
+            </div>
+            <div class="control-group">
+                <label for="solidityThreshold">實心度閾值: <span class="value-display" id="solidityThresholdValue">0.3</span></label>
+                <input type="range" id="solidityThreshold" min="0.1" max="0.8" step="0.1" value="0.3">
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button onclick="detectTadpoles()">🔍 智能識別蝌蚪</button>
+            <button onclick="showBinaryImage()">👁️ 顯示二值化圖像</button>
+            <button onclick="resetImage()">🔄 重置圖片</button>
+            <button onclick="manualCount()">✋ 手動計數模式</button>
+        </div>
+
+        <div class="image-container">
+            <div class="image-box">
+                <h3>原始圖像</h3>
+                <img id="originalImage" style="display:none;">
+            </div>
+            <div class="image-box">
+                <h3>處理結果</h3>
+                <canvas id="processedCanvas" style="display:none;"></canvas>
+            </div>
+            <div class="image-box">
+                <h3>二值化圖像</h3>
+                <canvas id="binaryCanvas" style="display:none;"></canvas>
+            </div>
+        </div>
+
+        <div class="results" id="results" style="display:none;">
+            <h3>🎯 識別結果</h3>
+            <div class="count-display">檢測到的蝌蚪數量: <span id="tadpoleCount">0</span> 隻</div>
+            
+            <div class="detection-info">
+                <div class="info-item">
+                    <div>總輪廓數</div>
+                    <div class="info-value" id="totalContours">0</div>
+                </div>
+                <div class="info-item">
+                    <div>符合條件</div>
+                    <div class="info-value" id="validContours">0</div>
+                </div>
+                <div class="info-item">
+                    <div>平均面積</div>
+                    <div class="info-value" id="avgArea">0</div>
+                </div>
+                <div class="info-item">
+                    <div>手動計數</div>
+                    <div class="info-value" id="manualCount">0</div>
+                </div>
+            </div>
+            
+            <p style="margin-top: 15px;">
+                <span style="color: #e74c3c;">●</span> 紅色圓圈：自動檢測到的蝌蚪
+                <span style="margin-left: 20px; color: #3498db;">●</span> 藍色圓圈：手動標記的蝌蚪
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let originalImageData = null;
+        let canvas = null;
+        let ctx = null;
+        let binaryCanvas = null;
+        let binaryCtx = null;
+        let detectedTadpoles = [];
+        let manualMarks = [];
+        let isManualMode = false;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            canvas = document.getElementById('processedCanvas');
+            ctx = canvas.getContext('2d');
+            binaryCanvas = document.getElementById('binaryCanvas');
+            binaryCtx = binaryCanvas.getContext('2d');
+            
+            setupSliderEvents();
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+        });
+
+        function setupSliderEvents() {
+            const sliders = ['binaryThreshold', 'minArea', 'maxArea', 'morphSize', 'aspectRatio', 'solidityThreshold'];
+            sliders.forEach(id => {
+                const slider = document.getElementById(id);
+                const valueSpan = document.getElementById(id + 'Value');
+                slider.addEventListener('input', function() {
+                    valueSpan.textContent = this.value;
+                });
+            });
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('originalImage');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                    
+                    img.onload = function() {
+                        setupCanvases(img);
+                        document.getElementById('results').style.display = 'none';
+                        detectedTadpoles = [];
+                        manualMarks = [];
+                    };
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function setupCanvases(img) {
+            // 設置主畫布
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            canvas.style.display = 'block';
+            
+            // 設置二值化畫布
+            binaryCanvas.width = img.width;
+            binaryCanvas.height = img.height;
+            binaryCanvas.style.display = 'block';
+        }
+
+        function detectTadpoles() {
+            if (!originalImageData) {
+                alert('請先上傳圖片！');
+                return;
+            }
+
+            const threshold = parseInt(document.getElementById('binaryThreshold').value);
+            const minArea = parseInt(document.getElementById('minArea').value);
+            const maxArea = parseInt(document.getElementById('maxArea').value);
+            const morphSize = parseInt(document.getElementById('morphSize').value);
+            const aspectRatio = parseFloat(document.getElementById('aspectRatio').value);
+            const solidityThreshold = parseFloat(document.getElementById('solidityThreshold').value);
+
+            // 1. 轉換為灰階
+            const grayData = convertToGrayscale(originalImageData);
+            
+            // 2. 自適應二值化
+            const binaryData = adaptiveThreshold(grayData, threshold);
+            
+            // 3. 形態學處理
+            const morphData = morphologyOperations(binaryData, morphSize);
+            
+            // 4. 顯示二值化結果
+            displayBinaryImage(morphData);
+            
+            // 5. 輪廓檢測和分析
+            const contours = findContours(morphData);
+            
+            // 6. 篩選有效輪廓
+            const validContours = filterContours(contours, minArea, maxArea, aspectRatio, solidityThreshold);
+            
+            // 7. 繪製結果
+            drawDetectionResults(validContours);
+            
+            // 8. 更新統計信息
+            updateStatistics(contours, validContours);
+            
+            detectedTadpoles = validContours;
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function convertToGrayscale(imageData) {
+            const data = new Uint8ClampedArray(imageData.data);
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                data[i] = gray;
+                data[i + 1] = gray;
+                data[i + 2] = gray;
+            }
+            return new ImageData(data, imageData.width, imageData.height);
+        }
+
+        function adaptiveThreshold(imageData, threshold) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const result = new Uint8ClampedArray(data.length);
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = data[i];
+                const binary = gray < threshold ? 0 : 255;
+                result[i] = binary;
+                result[i + 1] = binary;
+                result[i + 2] = binary;
+                result[i + 3] = 255;
+            }
+            
+            return new ImageData(result, width, height);
+        }
+
+        function morphologyOperations(imageData, kernelSize) {
+            // 執行開運算（腐蝕後膨脹）去除噪聲
+            let result = erode(imageData, kernelSize);
+            result = dilate(result, kernelSize);
+            
+            // 執行閉運算（膨脹後腐蝕）填補空洞
+            result = dilate(result, kernelSize);
+            result = erode(result, kernelSize);
+            
+            return result;
+        }
+
+        function erode(imageData, kernelSize) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const result = new Uint8ClampedArray(data.length);
+            
+            for (let y = kernelSize; y < height - kernelSize; y++) {
+                for (let x = kernelSize; x < width - kernelSize; x++) {
+                    let minVal = 255;
+                    
+                    for (let dy = -kernelSize; dy <= kernelSize; dy++) {
+                        for (let dx = -kernelSize; dx <= kernelSize; dx++) {
+                            const idx = ((y + dy) * width + (x + dx)) * 4;
+                            minVal = Math.min(minVal, data[idx]);
+                        }
+                    }
+                    
+                    const idx = (y * width + x) * 4;
+                    result[idx] = minVal;
+                    result[idx + 1] = minVal;
+                    result[idx + 2] = minVal;
+                    result[idx + 3] = 255;
+                }
+            }
+            
+            return new ImageData(result, width, height);
+        }
+
+        function dilate(imageData, kernelSize) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const result = new Uint8ClampedArray(data.length);
+            
+            for (let y = kernelSize; y < height - kernelSize; y++) {
+                for (let x = kernelSize; x < width - kernelSize; x++) {
+                    let maxVal = 0;
+                    
+                    for (let dy = -kernelSize; dy <= kernelSize; dy++) {
+                        for (let dx = -kernelSize; dx <= kernelSize; dx++) {
+                            const idx = ((y + dy) * width + (x + dx)) * 4;
+                            maxVal = Math.max(maxVal, data[idx]);
+                        }
+                    }
+                    
+                    const idx = (y * width + x) * 4;
+                    result[idx] = maxVal;
+                    result[idx + 1] = maxVal;
+                    result[idx + 2] = maxVal;
+                    result[idx + 3] = 255;
+                }
+            }
+            
+            return new ImageData(result, width, height);
+        }
+
+        function findContours(imageData) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            const visited = new Array(width * height).fill(false);
+            const contours = [];
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = y * width + x;
+                    if (!visited[idx] && data[idx * 4] === 255) {
+                        const contour = traceContour(data, width, height, x, y, visited);
+                        if (contour.length > 5) {
+                            contours.push(contour);
+                        }
+                    }
+                }
+            }
+            
+            return contours;
+        }
+
+        function traceContour(data, width, height, startX, startY, visited) {
+            const contour = [];
+            const stack = [{x: startX, y: startY}];
+            
+            while (stack.length > 0) {
+                const {x, y} = stack.pop();
+                const idx = y * width + x;
+                
+                if (x < 0 || x >= width || y < 0 || y >= height || visited[idx] || data[idx * 4] !== 255) {
+                    continue;
+                }
+                
+                visited[idx] = true;
+                contour.push({x, y});
+                
+                // 檢查8個方向的鄰居
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        stack.push({x: x + dx, y: y + dy});
+                    }
+                }
+            }
+            
+            return contour;
+        }
+
+        function filterContours(contours, minArea, maxArea, maxAspectRatio, minSolidity) {
+            const validContours = [];
+            
+            contours.forEach(contour => {
+                const area = contour.length;
+                
+                if (area < minArea || area > maxArea) return;
+                
+                const boundingRect = getBoundingRect(contour);
+                const aspectRatio = Math.max(boundingRect.width, boundingRect.height) / 
+                                 Math.min(boundingRect.width, boundingRect.height);
+                
+                if (aspectRatio > maxAspectRatio) return;
+                
+                const convexHull = getConvexHull(contour);
+                const solidity = area / convexHull.length;
+                
+                if (solidity < minSolidity) return;
+                
+                validContours.push({
+                    contour,
+                    area,
+                    boundingRect,
+                    aspectRatio,
+                    solidity,
+                    center: {
+                        x: boundingRect.x + boundingRect.width / 2,
+                        y: boundingRect.y + boundingRect.height / 2
+                    }
+                });
+            });
+            
+            return validContours;
+        }
+
+        function getBoundingRect(contour) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            contour.forEach(point => {
+                minX = Math.min(minX, point.x);
+                minY = Math.min(minY, point.y);
+                maxX = Math.max(maxX, point.x);
+                maxY = Math.max(maxY, point.y);
+            });
+            
+            return {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            };
+        }
+
+        function getConvexHull(contour) {
+            // 簡化的凸包算法
+            contour.sort((a, b) => a.x - b.x || a.y - b.y);
+            
+            const lower = [];
+            for (let i = 0; i < contour.length; i++) {
+                while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], contour[i]) <= 0) {
+                    lower.pop();
+                }
+                lower.push(contour[i]);
+            }
+            
+            const upper = [];
+            for (let i = contour.length - 1; i >= 0; i--) {
+                while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], contour[i]) <= 0) {
+                    upper.pop();
+                }
+                upper.push(contour[i]);
+            }
+            
+            upper.pop();
+            lower.pop();
+            return lower.concat(upper);
+        }
+
+        function cross(O, A, B) {
+            return (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+        }
+
+        function displayBinaryImage(imageData) {
+            binaryCtx.putImageData(imageData, 0, 0);
+        }
+
+        function drawDetectionResults(validContours) {
+            ctx.putImageData(originalImageData, 0, 0);
+            
+            // 繪製自動檢測結果
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'red';
+            
+            validContours.forEach(item => {
+                const {center, boundingRect} = item;
+                const radius = Math.max(boundingRect.width, boundingRect.height) / 2;
+                
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            // 繪製手動標記
+            ctx.strokeStyle = 'blue';
+            ctx.fillStyle = 'blue';
+            
+            manualMarks.forEach(mark => {
+                ctx.beginPath();
+                ctx.arc(mark.x, mark.y, 8, 0, 2 * Math.PI);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(mark.x, mark.y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+
+        function updateStatistics(allContours, validContours) {
+            document.getElementById('tadpoleCount').textContent = validContours.length;
+            document.getElementById('totalContours').textContent = allContours.length;
+            document.getElementById('validContours').textContent = validContours.length;
+            
+            if (validContours.length > 0) {
+                const avgArea = validContours.reduce((sum, item) => sum + item.area, 0) / validContours.length;
+                document.getElementById('avgArea').textContent = Math.round(avgArea);
+            } else {
+                document.getElementById('avgArea').textContent = '0';
+            }
+            
+            document.getElementById('manualCount').textContent = manualMarks.length;
+        }
+
+        function showBinaryImage() {
+            if (originalImageData) {
+                const threshold = parseInt(document.getElementById('binaryThreshold').value);
+                const grayData = convertToGrayscale(originalImageData);
+                const binaryData = adaptiveThreshold(grayData, threshold);
+                const morphSize = parseInt(document.getElementById('morphSize').value);
+                const morphData = morphologyOperations(binaryData, morphSize);
+                displayBinaryImage(morphData);
+            }
+        }
+
+        function resetImage() {
+            if (originalImageData) {
+                ctx.putImageData(originalImageData, 0, 0);
+                binaryCtx.clearRect(0, 0, binaryCanvas.width, binaryCanvas.height);
+                document.getElementById('results').style.display = 'none';
+                detectedTadpoles = [];
+                manualMarks = [];
+                isManualMode = false;
+            }
+        }
+
+        function manualCount() {
+            if (!originalImageData) {
+                alert('請先上傳圖片！');
+                return;
+            }
+            
+            isManualMode = !isManualMode;
+            
+            if (isManualMode) {
+                canvas.style.cursor = 'crosshair';
+                canvas.addEventListener('click', handleManualClick);
+                alert('手動計數模式已開啟！點擊圖像來標記蝌蚪。');
+            } else {
+                canvas.style.cursor = 'default';
+                canvas.removeEventListener('click', handleManualClick);
+                alert('手動計數模式已關閉。');
+            }
+        }
+
+        function handleManualClick(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+            
+            manualMarks.push({x, y});
+            drawDetectionResults(detectedTadpoles);
+            document.getElementById('manualCount').textContent = manualMarks.length;
+            
+            if (document.getElementById('results').style.display === 'none') {
+                document.getElementById('results').style.display = 'block';
+                updateStatistics([], detectedTadpoles);
+            }
+        }
+    </script>
+</body>
+</html>
