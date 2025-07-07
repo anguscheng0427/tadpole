@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蝌蚪識別計數器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #ecf0f1;
+        }
+        .upload-area:hover {
+            background-color: #d5dbdb;
+        }
+        #fileInput {
+            margin: 10px 0;
+        }
+        .image-container {
+            position: relative;
+            margin: 20px 0;
+            text-align: center;
+        }
+        #originalImage, #processedCanvas {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #34495e;
+            border-radius: 5px;
+            margin: 10px;
+        }
+        .controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .control-group {
+            margin: 10px 0;
+            display: inline-block;
+            margin-right: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .results {
+            background-color: #e8f5e8;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .count-display {
+            font-size: 24px;
+            font-weight: bold;
+            color: #27ae60;
+            margin: 10px 0;
+        }
+        .instructions {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐸 蝌蚪識別計數器</h1>
+        
+        <div class="instructions">
+            <h3>使用說明：</h3>
+            <p>1. 上傳包含蝌蚪的圖片</p>
+            <p>2. 調整檢測參數以獲得最佳識別效果</p>
+            <p>3. 點擊「開始識別」來計算蝌蚪數量</p>
+            <p>4. 紅色圓圈標示識別到的蝌蚪位置</p>
+        </div>
+
+        <div class="upload-area">
+            <h3>選擇圖片</h3>
+            <input type="file" id="fileInput" accept="image/*">
+            <p>支援 JPG, PNG, GIF 格式</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="minRadius">最小半徑: <span id="minRadiusValue">5</span></label>
+                <input type="range" id="minRadius" min="3" max="20" value="5">
+            </div>
+            <div class="control-group">
+                <label for="maxRadius">最大半徑: <span id="maxRadiusValue">25</span></label>
+                <input type="range" id="maxRadius" min="10" max="50" value="25">
+            </div>
+            <div class="control-group">
+                <label for="threshold">檢測閾值: <span id="thresholdValue">30</span></label>
+                <input type="range" id="threshold" min="10" max="100" value="30">
+            </div>
+            <div class="control-group">
+                <label for="minDistance">最小距離: <span id="minDistanceValue">20</span></label>
+                <input type="range" id="minDistance" min="10" max="50" value="20">
+            </div>
+        </div>
+
+        <div style="text-align: center;">
+            <button onclick="detectTadpoles()">🔍 開始識別蝌蚪</button>
+            <button onclick="resetImage()">🔄 重置圖片</button>
+        </div>
+
+        <div class="image-container">
+            <img id="originalImage" style="display:none;">
+            <canvas id="processedCanvas" style="display:none;"></canvas>
+        </div>
+
+        <div class="results" id="results" style="display:none;">
+            <h3>識別結果</h3>
+            <div class="count-display">檢測到的蝌蚪數量: <span id="tadpoleCount">0</span> 隻</div>
+            <p>紅色圓圈標示識別到的蝌蚪位置</p>
+        </div>
+    </div>
+
+    <script>
+        let originalImageData = null;
+        let canvas = null;
+        let ctx = null;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            canvas = document.getElementById('processedCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // 設置滑塊事件
+            setupSliderEvents();
+            
+            // 設置文件上傳事件
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+        });
+
+        function setupSliderEvents() {
+            const sliders = ['minRadius', 'maxRadius', 'threshold', 'minDistance'];
+            sliders.forEach(id => {
+                const slider = document.getElementById(id);
+                const valueSpan = document.getElementById(id + 'Value');
+                slider.addEventListener('input', function() {
+                    valueSpan.textContent = this.value;
+                });
+            });
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('originalImage');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                    
+                    img.onload = function() {
+                        // 設置 canvas 大小
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        
+                        // 繪製原始圖片到 canvas
+                        ctx.drawImage(img, 0, 0);
+                        
+                        // 保存原始圖片數據
+                        originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        
+                        canvas.style.display = 'block';
+                        document.getElementById('results').style.display = 'none';
+                    };
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function detectTadpoles() {
+            if (!originalImageData) {
+                alert('請先上傳圖片！');
+                return;
+            }
+
+            // 獲取參數
+            const minRadius = parseInt(document.getElementById('minRadius').value);
+            const maxRadius = parseInt(document.getElementById('maxRadius').value);
+            const threshold = parseInt(document.getElementById('threshold').value);
+            const minDistance = parseInt(document.getElementById('minDistance').value);
+
+            // 重置 canvas
+            ctx.putImageData(originalImageData, 0, 0);
+
+            // 轉換為灰階進行處理
+            const grayData = convertToGrayscale(originalImageData);
+            
+            // 應用高斯模糊
+            const blurredData = applyGaussianBlur(grayData, 2);
+            
+            // 檢測圓形物體（蝌蚪）
+            const circles = detectCircles(blurredData, minRadius, maxRadius, threshold, minDistance);
+            
+            // 繪製檢測結果
+            drawDetectionResults(circles);
+            
+            // 顯示結果
+            document.getElementById('tadpoleCount').textContent = circles.length;
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function convertToGrayscale(imageData) {
+            const data = new Uint8ClampedArray(imageData.data);
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                data[i] = gray;     // R
+                data[i + 1] = gray; // G
+                data[i + 2] = gray; // B
+                // Alpha 保持不變
+            }
+            return new ImageData(data, imageData.width, imageData.height);
+        }
+
+        function applyGaussianBlur(imageData, radius) {
+            const data = new Uint8ClampedArray(imageData.data);
+            const width = imageData.width;
+            const height = imageData.height;
+            
+            // 簡單的模糊實現
+            for (let y = radius; y < height - radius; y++) {
+                for (let x = radius; x < width - radius; x++) {
+                    let r = 0, g = 0, b = 0;
+                    let count = 0;
+                    
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        for (let dx = -radius; dx <= radius; dx++) {
+                            const idx = ((y + dy) * width + (x + dx)) * 4;
+                            r += data[idx];
+                            g += data[idx + 1];
+                            b += data[idx + 2];
+                            count++;
+                        }
+                    }
+                    
+                    const idx = (y * width + x) * 4;
+                    data[idx] = r / count;
+                    data[idx + 1] = g / count;
+                    data[idx + 2] = b / count;
+                }
+            }
+            
+            return new ImageData(data, width, height);
+        }
+
+        function detectCircles(imageData, minRadius, maxRadius, threshold, minDistance) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const data = imageData.data;
+            
+            // 邊緣檢測
+            const edges = detectEdges(data, width, height);
+            
+            // 霍夫圓變換
+            const circles = houghCircleTransform(edges, width, height, minRadius, maxRadius, threshold, minDistance);
+            
+            return circles;
+        }
+
+        function detectEdges(data, width, height) {
+            const edges = new Array(width * height).fill(0);
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = (y * width + x) * 4;
+                    const current = data[idx];
+                    
+                    // Sobel 算子
+                    const gx = -data[((y-1) * width + (x-1)) * 4] + data[((y-1) * width + (x+1)) * 4] +
+                              -2 * data[(y * width + (x-1)) * 4] + 2 * data[(y * width + (x+1)) * 4] +
+                              -data[((y+1) * width + (x-1)) * 4] + data[((y+1) * width + (x+1)) * 4];
+                    
+                    const gy = -data[((y-1) * width + (x-1)) * 4] - 2 * data[((y-1) * width + x) * 4] - data[((y-1) * width + (x+1)) * 4] +
+                               data[((y+1) * width + (x-1)) * 4] + 2 * data[((y+1) * width + x) * 4] + data[((y+1) * width + (x+1)) * 4];
+                    
+                    const magnitude = Math.sqrt(gx * gx + gy * gy);
+                    edges[y * width + x] = magnitude > 50 ? 255 : 0;
+                }
+            }
+            
+            return edges;
+        }
+
+        function houghCircleTransform(edges, width, height, minRadius, maxRadius, threshold, minDistance) {
+            const circles = [];
+            
+            // 簡化的圓檢測算法
+            for (let y = maxRadius; y < height - maxRadius; y += 2) {
+                for (let x = maxRadius; x < width - maxRadius; x += 2) {
+                    if (edges[y * width + x] > 0) {
+                        for (let r = minRadius; r <= maxRadius; r += 2) {
+                            let votes = 0;
+                            
+                            // 檢查圓周上的點
+                            for (let angle = 0; angle < 360; angle += 15) {
+                                const radian = angle * Math.PI / 180;
+                                const cx = Math.round(x + r * Math.cos(radian));
+                                const cy = Math.round(y + r * Math.sin(radian));
+                                
+                                if (cx >= 0 && cx < width && cy >= 0 && cy < height) {
+                                    if (edges[cy * width + cx] > 0) {
+                                        votes++;
+                                    }
+                                }
+                            }
+                            
+                            // 如果投票數超過閾值，認為找到了圓
+                            if (votes >= threshold / 10) {
+                                // 檢查是否與已存在的圓太近
+                                let tooClose = false;
+                                for (let existing of circles) {
+                                    const distance = Math.sqrt((x - existing.x) ** 2 + (y - existing.y) ** 2);
+                                    if (distance < minDistance) {
+                                        tooClose = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!tooClose) {
+                                    circles.push({x: x, y: y, r: r, votes: votes});
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 根據投票數排序並返回前面的結果
+            circles.sort((a, b) => b.votes - a.votes);
+            return circles.slice(0, 200); // 限制最大檢測數量
+        }
+
+        function drawDetectionResults(circles) {
+            // 在原圖上繪製檢測結果
+            ctx.putImageData(originalImageData, 0, 0);
+            
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            
+            circles.forEach(circle => {
+                ctx.beginPath();
+                ctx.arc(circle.x, circle.y, circle.r, 0, 2 * Math.PI);
+                ctx.stroke();
+                
+                // 在圓心畫一個小點
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.arc(circle.x, circle.y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+
+        function resetImage() {
+            if (originalImageData) {
+                ctx.putImageData(originalImageData, 0, 0);
+                document.getElementById('results').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
